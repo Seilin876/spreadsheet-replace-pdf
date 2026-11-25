@@ -38,15 +38,14 @@ jobs:
           import subprocess
           from tempfile import TemporaryDirectory
           from unittest.mock import patch
+          import winreg
           from openpyxl import Workbook, load_workbook
-          from pywintypes import com_error
-          import pythoncom
           import replace_and_export as app
 
           try:
-              pythoncom.CLSIDFromProgID("Excel.Application")
-              excel_installed = True
-          except com_error:
+              with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"Excel.Application\CLSID"):
+                  excel_installed = True
+          except FileNotFoundError:
               excel_installed = False
 
           class TestWorkbook:
