@@ -1,5 +1,7 @@
 import codecs
+from contextlib import contextmanager
 import csv
+from functools import partial
 import io
 import os
 from pathlib import Path
@@ -18,35 +20,77 @@ SUPPORTED = {".xlsx", ".xlsm", ".xls", ".csv"}
 
 
 def find_office():
-    if sys.platform == "win32":
-        for name in ("soffice.com", "soffice.exe"):
-            executable = shutil.which(name)
-            if executable:
-                return executable
-            for variable in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
-                folder = os.environ.get(variable)
-                if folder:
-                    candidate = Path(folder) / "LibreOffice" / "program" / name
-                    if candidate.is_file():
-                        return str(candidate)
-        return None
     executable = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
     return shutil.which("soffice") or (executable if os.access(executable, os.X_OK) else None)
 
 
-def convert(office, profile, source, target_dir, output_filter):
+def convert_libreoffice(office, profile, source, target_dir, extension):
+    output_filter = {
+        "xlsx": "xlsx:Calc Office Open XML",
+        "xls": "xls:MS Excel 97",
+        "pdf": "pdf:calc_pdf_Export",
+    }[extension]
     target_dir.mkdir(exist_ok=True)
     result = subprocess.run(
         [office, f"-env:UserInstallation={profile.as_uri()}", "--headless",
          "--convert-to", output_filter, "--outdir", str(target_dir), str(source)],
         capture_output=True, text=True, errors="replace", timeout=180,
     )
-    suffix = output_filter.split(":", 1)[0]
-    target = target_dir / f"{source.stem}.{suffix}"
+    target = target_dir / f"{source.stem}.{extension}"
     if result.returncode or not target.is_file() or not target.stat().st_size:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"無法轉成 {suffix}。{detail}")
+        raise RuntimeError(f"無法轉成 {extension}。{detail}")
     return target
+
+
+def convert_excel(excel, source, target_dir, extension):
+    from pythoncom import Missing
+
+    target_dir.mkdir(exist_ok=True)
+    target = target_dir / f"{source.stem}.{extension}"
+    # 位置參數依序為檔名、更新連結、唯讀、格式、密碼、寫入密碼及忽略唯讀建議。
+    workbook = excel.Workbooks.Open(str(source), 0, True, Missing, "", "", True)
+    try:
+        if extension == "pdf":
+            workbook.ExportAsFixedFormat(0, str(target))
+        else:
+            file_format = {"xlsx": 51, "xls": 56}[extension]
+            workbook.SaveAs(str(target), file_format)
+    finally:
+        workbook.Close(False)
+    if not target.is_file() or not target.stat().st_size:
+        raise RuntimeError(f"Excel 未產生 {extension} 檔案")
+    return target
+
+
+@contextmanager
+def open_converter(profile):
+    if sys.platform != "win32":
+        office = find_office()
+        if not office:
+            raise RuntimeError("找不到 LibreOffice。請從 https://www.libreoffice.org/ 安裝後重新執行。")
+        yield partial(convert_libreoffice, office, profile)
+        return
+
+    from pywintypes import com_error
+    from win32com.client import DispatchEx
+
+    try:
+        excel = DispatchEx("Excel.Application")
+    except com_error as error:
+        raise RuntimeError(
+            "無法啟動桌面版 Microsoft Excel，請確認已安裝且能正常開啟。"
+        ) from error
+    try:
+        try:
+            excel.DisplayAlerts = False
+            excel.EnableEvents = False
+            excel.AutomationSecurity = 3  # msoAutomationSecurityForceDisable
+            yield partial(convert_excel, excel)
+        finally:
+            excel.Quit()
+    except com_error as error:
+        raise RuntimeError(f"無法完成 Microsoft Excel 自動化作業。{error}") from error
 
 
 def replace_excel(source, target, old, new):
@@ -140,7 +184,7 @@ def replace_csv(source, target, pdf_source, old, new):
     return count
 
 
-def process(source, office, profile, work, old, new):
+def process(source, convert, work, old, new):
     suffix = source.suffix.lower()
     staged = work / f"updated{suffix}"
     pdf_source = staged
@@ -148,18 +192,18 @@ def process(source, office, profile, work, old, new):
         pdf_source = work / "csv.xlsx"
         count = replace_csv(source, staged, pdf_source, old, new)
     elif suffix == ".xls":
-        modern = convert(office, profile, source, work / "import", "xlsx:Calc Office Open XML")
+        modern = convert(source, work / "import", "xlsx")
         pdf_source = work / "updated.xlsx"
         count = replace_excel(modern, pdf_source, old, new)
         if count:
-            staged = convert(office, profile, pdf_source, work / "legacy", "xls:MS Excel 97")
+            staged = convert(pdf_source, work / "legacy", "xls")
             pdf_source = staged
         else:
             pdf_source = source
     else:
         count = replace_excel(source, staged, old, new)
 
-    pdf = convert(office, profile, pdf_source, work / "pdf", "pdf:calc_pdf_Export")
+    pdf = convert(pdf_source, work / "pdf", "pdf")
     with pdf.open("rb") as stream:
         if stream.read(5) != b"%PDF-":
             raise ValueError("輸出檔不是有效的 PDF")
@@ -203,22 +247,19 @@ def main():
     if not sources:
         print("資料夾內沒有支援的檔案。")
         return 0
-    office = find_office()
-    if not office:
-        raise RuntimeError("找不到 LibreOffice。請從 https://www.libreoffice.org/ 安裝後重新執行。")
-
     failures = 0
     with TemporaryDirectory(prefix="replace-pdf-", dir=directory) as temporary:
         root = Path(temporary)
-        for index, source in enumerate(sources):
-            work = root / str(index)
-            work.mkdir()
-            try:
-                count, pdf = process(source, office, root / "profile", work, old, new)
-                print(f"完成 {source.name}，替換 {count} 處，PDF 為 {pdf.name}")
-            except Exception as error:
-                failures += 1
-                print(f"失敗 {source.name}，{error}", file=sys.stderr)
+        with open_converter(root / "profile") as convert:
+            for index, source in enumerate(sources):
+                work = root / str(index)
+                work.mkdir()
+                try:
+                    count, pdf = process(source, convert, work, old, new)
+                    print(f"完成 {source.name}，替換 {count} 處，PDF 為 {pdf.name}")
+                except Exception as error:
+                    failures += 1
+                    print(f"失敗 {source.name}，{error}", file=sys.stderr)
     print(f"共 {len(sources)} 個檔案，成功 {len(sources) - failures} 個，失敗 {failures} 個。")
     return int(bool(failures))
 
@@ -226,10 +267,6 @@ def main():
 if __name__ == "__main__":
     frozen_windows = sys.platform == "win32" and getattr(sys, "frozen", False)
     if frozen_windows:
-        import ctypes
-
-        # 讓外部 LibreOffice 使用自己的 DLL 搜尋路徑。
-        ctypes.windll.kernel32.SetDllDirectoryW(None)
         for stream in (sys.stdin, sys.stdout, sys.stderr):
             if not stream.isatty():
                 stream.reconfigure(encoding="utf-8")

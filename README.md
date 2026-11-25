@@ -4,7 +4,7 @@
 
 從 [GitHub Releases](https://github.com/Seilin876/spreadsheet-replace-pdf/releases/latest) 下載 `SpreadsheetReplacePDF-win-x64.exe`，雙擊執行。執行檔已包含 Python 和所需的 Python 套件。
 
-PDF 匯出需要先安裝 [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/)。程式會自動搜尋 Windows 預設安裝路徑及 PATH。
+Windows 版使用電腦上已安裝的桌面版 Microsoft Excel 匯出 PDF。首次使用前，請確認 Excel 能正常開啟及另存 PDF。Windows 版無需安裝 LibreOffice 或 Acrobat。
 
 ## 安裝（macOS）
 

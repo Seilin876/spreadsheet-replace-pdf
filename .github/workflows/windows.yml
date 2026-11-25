@@ -26,19 +26,50 @@ jobs:
         run: |
           python -m pip install -r requirements.txt pyinstaller==6.22.0
           python -m PyInstaller --clean --onefile --console --name SpreadsheetReplacePDF-win-x64 replace_and_export.py
-      - name: Install LibreOffice for verification
-        run: choco install libreoffice-fresh --yes --no-progress
-      - name: Verify replacement and real PDF export
+      - name: Verify Excel integration and packaged executable
         shell: python
         env:
           PYTHONIOENCODING: utf-8
+          PYTHONPATH: .
         run: |
           import csv
           import os
           from pathlib import Path
           import subprocess
           from tempfile import TemporaryDirectory
+          from unittest.mock import patch
           from openpyxl import Workbook, load_workbook
+          from pywintypes import com_error
+          import pythoncom
+          import replace_and_export as app
+
+          try:
+              pythoncom.CLSIDFromProgID("Excel.Application")
+              excel_installed = True
+          except com_error:
+              excel_installed = False
+
+          class TestWorkbook:
+              def ExportAsFixedFormat(self, format_id, output):
+                  assert format_id == 0
+                  Path(output).write_bytes(b"%PDF-mock")
+
+              def Close(self, save):
+                  assert save is False
+
+          class TestExcel:
+              def __init__(self):
+                  self.Workbooks = self
+                  self.closed = False
+
+              def Open(self, filename, update_links, read_only, format_id,
+                       password, write_password, ignore_read_only):
+                  assert Path(filename).is_file()
+                  assert update_links == 0 and read_only
+                  return TestWorkbook()
+
+              def Quit(self):
+                  self.closed = True
 
           exe = Path("dist/SpreadsheetReplacePDF-win-x64.exe").resolve()
           with TemporaryDirectory(prefix="replace-pdf test ") as directory:
@@ -51,6 +82,7 @@ jobs:
               workbook.create_sheet("Second")["A1"] = "old"
               workbook.save(xlsx)
               table.write_text("id,text\n001,old\n", encoding="utf-8")
+              originals = {source: source.read_bytes() for source in (xlsx, table)}
 
               run = subprocess.run(
                   [str(exe)], input=f"{folder}\nold\n新\n".encode(),
@@ -58,7 +90,18 @@ jobs:
                   env={**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")},
               )
               print(run.stdout.decode(errors="replace"))
-              run.check_returncode()
+              if excel_installed:
+                  run.check_returncode()
+              else:
+                  assert run.returncode == 1
+                  assert "無法啟動桌面版 Microsoft Excel" in run.stdout.decode()
+                  assert all(file.read_bytes() == original for file, original in originals.items())
+                  excel = TestExcel()
+                  with patch("win32com.client.DispatchEx", return_value=excel), patch(
+                      "builtins.input", side_effect=[str(folder), "old", "新"]
+                  ):
+                      assert app.main() == 0
+                  assert excel.closed and excel.AutomationSecurity == 3
               updated = load_workbook(xlsx)
               assert updated.active["A1"].value == "新 新"
               assert updated.active["B1"].value == "=1+1"
