@@ -39,7 +39,7 @@ def convert_libreoffice(office, profile, source, target_dir, extension):
     target = target_dir / f"{source.stem}.{extension}"
     if result.returncode or not target.is_file() or not target.stat().st_size:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"無法轉成 {extension}。{detail}")
+        raise RuntimeError(f"Could not convert the file to {extension}. {detail}")
     return target
 
 
@@ -48,7 +48,7 @@ def convert_excel(excel, source, target_dir, extension):
 
     target_dir.mkdir(exist_ok=True)
     target = target_dir / f"{source.stem}.{extension}"
-    # 位置參數依序為檔名、更新連結、唯讀、格式、密碼、寫入密碼及忽略唯讀建議。
+    # Open with link updates disabled, read-only access, and blank passwords.
     workbook = excel.Workbooks.Open(str(source), 0, True, Missing, "", "", True)
     try:
         if extension == "pdf":
@@ -59,7 +59,7 @@ def convert_excel(excel, source, target_dir, extension):
     finally:
         workbook.Close(False)
     if not target.is_file() or not target.stat().st_size:
-        raise RuntimeError(f"Excel 未產生 {extension} 檔案")
+        raise RuntimeError(f"Excel did not generate a {extension} file.")
     return target
 
 
@@ -68,7 +68,7 @@ def open_converter(profile):
     if sys.platform != "win32":
         office = find_office()
         if not office:
-            raise RuntimeError("找不到 LibreOffice。請從 https://www.libreoffice.org/ 安裝後重新執行。")
+            raise RuntimeError("LibreOffice was not found. Install it from https://www.libreoffice.org/ and try again.")
         yield partial(convert_libreoffice, office, profile)
         return
 
@@ -79,7 +79,7 @@ def open_converter(profile):
         excel = DispatchEx("Excel.Application")
     except com_error as error:
         raise RuntimeError(
-            "無法啟動桌面版 Microsoft Excel，請確認已安裝且能正常開啟。"
+            "Could not start desktop Microsoft Excel. Check that it is installed and opens normally."
         ) from error
     try:
         try:
@@ -90,7 +90,7 @@ def open_converter(profile):
         finally:
             excel.Quit()
     except com_error as error:
-        raise RuntimeError(f"無法完成 Microsoft Excel 自動化作業。{error}") from error
+        raise RuntimeError(f"Microsoft Excel automation failed. {error}") from error
 
 
 def replace_excel(source, target, old, new):
@@ -108,7 +108,7 @@ def replace_excel(source, target, old, new):
                     if occurrences:
                         changed = value.replace(old, new)
                         if len(changed) > 32767:
-                            raise ValueError(f"{sheet.title}!{cell.coordinate} 超過 Excel 的字數限制")
+                            raise ValueError(f"{sheet.title}!{cell.coordinate} exceeds Excel's cell character limit.")
                         cell.value = changed
                         cell.data_type = "s"
                         count += occurrences
@@ -136,7 +136,7 @@ def decode_csv(data):
             return data.decode(encoding), b"", encoding
         except UnicodeDecodeError:
             continue
-    raise ValueError("無法辨識 CSV 編碼")
+    raise ValueError("Could not determine the CSV file encoding.")
 
 
 def replace_csv(source, target, pdf_source, old, new):
@@ -171,7 +171,7 @@ def replace_csv(source, target, pdf_source, old, new):
         writer.writerow(changed)
         for column, value in enumerate(changed, 1):
             if len(value) > 32767:
-                raise ValueError(f"CSV 第 {row_index} 列第 {column} 欄超過 PDF 匯出的字數限制")
+                raise ValueError(f"CSV row {row_index}, column {column} exceeds the character limit for PDF export.")
             cell = sheet.cell(row_index, column, value)
             cell.data_type = "s"
             widths[column] = max(widths.get(column, 0), len(value))
@@ -206,7 +206,7 @@ def process(source, convert, work, old, new):
     pdf = convert(pdf_source, work / "pdf", "pdf")
     with pdf.open("rb") as stream:
         if stream.read(5) != b"%PDF-":
-            raise ValueError("輸出檔不是有效的 PDF")
+            raise ValueError("The exported file is not a valid PDF.")
     if count:
         shutil.copymode(source, staged)
         os.replace(staged, source)
@@ -219,7 +219,7 @@ def parse_directory(value):
     path = Path(value.strip()).expanduser()
     if path.is_dir():
         return path.resolve()
-    # 支援把 Finder 資料夾拖進終端機後產生的引號或跳脫字元。
+    # Accept paths quoted or escaped by the terminal.
     try:
         parts = shlex.split(value)
     except ValueError:
@@ -228,24 +228,24 @@ def parse_directory(value):
         path = Path(parts[0]).expanduser()
         if path.is_dir():
             return path.resolve()
-    raise ValueError("找不到此資料夾")
+    raise ValueError("Folder not found.")
 
 
 def main():
-    raw_path = input("資料夾路徑：")
+    raw_path = input("Folder path: ")
     if not raw_path.strip():
-        raise ValueError("資料夾路徑不可留空")
+        raise ValueError("The folder path cannot be empty.")
     directory = parse_directory(raw_path)
-    old = input("input（要搜尋的文字）：")
+    old = input("Text to find: ")
     if not old:
-        raise ValueError("input 不可留空")
-    new = input("output（替換文字，可留空）：")
+        raise ValueError("The text to find cannot be empty.")
+    new = input("Replacement text (leave blank to delete): ")
 
     sources = sorted(path for path in directory.iterdir()
                      if path.suffix.lower() in SUPPORTED and path.is_file()
                      and not path.is_symlink() and not path.name.startswith("~$"))
     if not sources:
-        print("資料夾內沒有支援的檔案。")
+        print("No supported files found in this folder.")
         return 0
     failures = 0
     with TemporaryDirectory(prefix="replace-pdf-", dir=directory) as temporary:
@@ -256,11 +256,11 @@ def main():
                 work.mkdir()
                 try:
                     count, pdf = process(source, convert, work, old, new)
-                    print(f"完成 {source.name}，替換 {count} 處，PDF 為 {pdf.name}")
+                    print(f"Processed {source.name}. Replacements: {count}. PDF: {pdf.name}")
                 except Exception as error:
                     failures += 1
-                    print(f"失敗 {source.name}，{error}", file=sys.stderr)
-    print(f"共 {len(sources)} 個檔案，成功 {len(sources) - failures} 個，失敗 {failures} 個。")
+                    print(f"Could not process {source.name}. {error}", file=sys.stderr)
+    print(f"Files: {len(sources)} total, {len(sources) - failures} succeeded, {failures} failed.")
     return int(bool(failures))
 
 
@@ -273,11 +273,11 @@ if __name__ == "__main__":
     try:
         exit_code = main()
     except (EOFError, KeyboardInterrupt, OSError, RuntimeError, ValueError) as error:
-        print(f"執行中止。{error}", file=sys.stderr)
+        print(f"Stopped. {error}", file=sys.stderr)
         exit_code = 1
     if frozen_windows and sys.stdin.isatty():
         try:
-            input("按 Enter 關閉視窗。")
+            input("Press Enter to close.")
         except (EOFError, KeyboardInterrupt):
             pass
     sys.exit(exit_code)

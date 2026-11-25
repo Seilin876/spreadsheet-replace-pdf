@@ -93,7 +93,7 @@ jobs:
                   run.check_returncode()
               else:
                   assert run.returncode == 1
-                  assert "無法啟動桌面版 Microsoft Excel" in run.stdout.decode()
+                  assert "Could not start desktop Microsoft Excel." in run.stdout.decode()
                   assert all(file.read_bytes() == original for file, original in originals.items())
                   excel = TestExcel()
                   with patch("win32com.client.DispatchEx", return_value=excel), patch(
