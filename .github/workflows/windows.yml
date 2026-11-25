@@ -1,0 +1,70 @@
+name: Build Windows executable
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/windows.yml
+      - replace_and_export.py
+      - requirements.txt
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Build standalone executable
+        run: |
+          python -m pip install -r requirements.txt pyinstaller==6.22.0
+          python -m PyInstaller --clean --onefile --console --name SpreadsheetReplacePDF-win-x64 replace_and_export.py
+      - name: Install LibreOffice for verification
+        run: choco install libreoffice-fresh --yes --no-progress
+      - name: Verify replacement and real PDF export
+        shell: python
+        run: |
+          import csv
+          from pathlib import Path
+          import subprocess
+          from tempfile import TemporaryDirectory
+          from openpyxl import Workbook, load_workbook
+
+          exe = Path("dist/SpreadsheetReplacePDF-win-x64.exe").resolve()
+          with TemporaryDirectory(prefix="replace-pdf test ") as directory:
+              folder = Path(directory)
+              xlsx = folder / "example.xlsx"
+              table = folder / "example.csv"
+              workbook = Workbook()
+              workbook.active["A1"] = "old old"
+              workbook.active["B1"] = "=1+1"
+              workbook.create_sheet("Second")["A1"] = "old"
+              workbook.save(xlsx)
+              table.write_text("id,text\n001,old\n", encoding="utf-8")
+
+              run = subprocess.run(
+                  [str(exe)], input=f"{folder}\nold\nnew\n".encode(),
+                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=360,
+              )
+              print(run.stdout.decode(errors="replace"))
+              run.check_returncode()
+              updated = load_workbook(xlsx)
+              assert updated.active["A1"].value == "new new"
+              assert updated.active["B1"].value == "=1+1"
+              assert updated["Second"]["A1"].value == "new"
+              with table.open(encoding="utf-8", newline="") as stream:
+                  assert list(csv.reader(stream)) == [["id", "text"], ["001", "new"]]
+              for source in (xlsx, table):
+                  assert source.with_name(source.name + ".pdf").read_bytes().startswith(b"%PDF-")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpreadsheetReplacePDF-win-x64
+          path: dist/SpreadsheetReplacePDF-win-x64.exe
+          if-no-files-found: error

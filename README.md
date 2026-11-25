@@ -1,5 +1,11 @@
 # 批次替換 Excel／CSV 文字並另存 PDF
 
+## Windows 64 位元
+
+從 [GitHub Releases](https://github.com/Seilin876/spreadsheet-replace-pdf/releases/latest) 下載 `SpreadsheetReplacePDF-win-x64.exe`，雙擊執行。執行檔已包含 Python 和所需的 Python 套件。
+
+PDF 匯出需要先安裝 [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/)。程式會自動搜尋 Windows 預設安裝路徑及 PATH。
+
 ## 安裝（macOS）
 
 先安裝 [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/)。如果已有 Homebrew，也可以執行 `brew install --cask libreoffice`。

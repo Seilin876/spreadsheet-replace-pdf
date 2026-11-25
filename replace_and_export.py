@@ -17,12 +17,29 @@ from openpyxl.utils import get_column_letter
 SUPPORTED = {".xlsx", ".xlsm", ".xls", ".csv"}
 
 
+def find_office():
+    if sys.platform == "win32":
+        for name in ("soffice.com", "soffice.exe"):
+            executable = shutil.which(name)
+            if executable:
+                return executable
+            for variable in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
+                folder = os.environ.get(variable)
+                if folder:
+                    candidate = Path(folder) / "LibreOffice" / "program" / name
+                    if candidate.is_file():
+                        return str(candidate)
+        return None
+    executable = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    return shutil.which("soffice") or (executable if os.access(executable, os.X_OK) else None)
+
+
 def convert(office, profile, source, target_dir, output_filter):
     target_dir.mkdir(exist_ok=True)
     result = subprocess.run(
         [office, f"-env:UserInstallation={profile.as_uri()}", "--headless",
          "--convert-to", output_filter, "--outdir", str(target_dir), str(source)],
-        capture_output=True, text=True, timeout=180,
+        capture_output=True, text=True, errors="replace", timeout=180,
     )
     suffix = output_filter.split(":", 1)[0]
     target = target_dir / f"{source.stem}.{suffix}"
@@ -186,9 +203,9 @@ def main():
     if not sources:
         print("資料夾內沒有支援的檔案。")
         return 0
-    office = shutil.which("soffice") or "/Applications/LibreOffice.app/Contents/MacOS/soffice"
-    if not os.access(office, os.X_OK):
-        raise RuntimeError("找不到 LibreOffice，請先安裝後再執行。")
+    office = find_office()
+    if not office:
+        raise RuntimeError("找不到 LibreOffice。請從 https://www.libreoffice.org/ 安裝後重新執行。")
 
     failures = 0
     with TemporaryDirectory(prefix="replace-pdf-", dir=directory) as temporary:
@@ -207,8 +224,20 @@ def main():
 
 
 if __name__ == "__main__":
+    frozen_windows = sys.platform == "win32" and getattr(sys, "frozen", False)
+    if frozen_windows:
+        import ctypes
+
+        # 讓外部 LibreOffice 使用自己的 DLL 搜尋路徑。
+        ctypes.windll.kernel32.SetDllDirectoryW(None)
     try:
-        sys.exit(main())
+        exit_code = main()
     except (EOFError, KeyboardInterrupt, OSError, RuntimeError, ValueError) as error:
         print(f"執行中止。{error}", file=sys.stderr)
-        sys.exit(1)
+        exit_code = 1
+    if frozen_windows and sys.stdin.isatty():
+        try:
+            input("按 Enter 關閉視窗。")
+        except (EOFError, KeyboardInterrupt):
+            pass
+    sys.exit(exit_code)
