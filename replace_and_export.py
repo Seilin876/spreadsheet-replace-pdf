@@ -230,6 +230,9 @@ if __name__ == "__main__":
 
         # 讓外部 LibreOffice 使用自己的 DLL 搜尋路徑。
         ctypes.windll.kernel32.SetDllDirectoryW(None)
+        for stream in (sys.stdin, sys.stdout, sys.stderr):
+            if not stream.isatty():
+                stream.reconfigure(encoding="utf-8")
     try:
         exit_code = main()
     except (EOFError, KeyboardInterrupt, OSError, RuntimeError, ValueError) as error:

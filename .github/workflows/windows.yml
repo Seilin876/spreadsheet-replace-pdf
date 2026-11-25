@@ -30,8 +30,11 @@ jobs:
         run: choco install libreoffice-fresh --yes --no-progress
       - name: Verify replacement and real PDF export
         shell: python
+        env:
+          PYTHONIOENCODING: utf-8
         run: |
           import csv
+          import os
           from pathlib import Path
           import subprocess
           from tempfile import TemporaryDirectory
@@ -40,8 +43,8 @@ jobs:
           exe = Path("dist/SpreadsheetReplacePDF-win-x64.exe").resolve()
           with TemporaryDirectory(prefix="replace-pdf test ") as directory:
               folder = Path(directory)
-              xlsx = folder / "example.xlsx"
-              table = folder / "example.csv"
+              xlsx = folder / "報表.xlsx"
+              table = folder / "報表.csv"
               workbook = Workbook()
               workbook.active["A1"] = "old old"
               workbook.active["B1"] = "=1+1"
@@ -50,17 +53,18 @@ jobs:
               table.write_text("id,text\n001,old\n", encoding="utf-8")
 
               run = subprocess.run(
-                  [str(exe)], input=f"{folder}\nold\nnew\n".encode(),
+                  [str(exe)], input=f"{folder}\nold\n新\n".encode(),
                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=360,
+                  env={**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")},
               )
               print(run.stdout.decode(errors="replace"))
               run.check_returncode()
               updated = load_workbook(xlsx)
-              assert updated.active["A1"].value == "new new"
+              assert updated.active["A1"].value == "新 新"
               assert updated.active["B1"].value == "=1+1"
-              assert updated["Second"]["A1"].value == "new"
+              assert updated["Second"]["A1"].value == "新"
               with table.open(encoding="utf-8", newline="") as stream:
-                  assert list(csv.reader(stream)) == [["id", "text"], ["001", "new"]]
+                  assert list(csv.reader(stream)) == [["id", "text"], ["001", "新"]]
               for source in (xlsx, table):
                   assert source.with_name(source.name + ".pdf").read_bytes().startswith(b"%PDF-")
       - uses: actions/upload-artifact@v4
