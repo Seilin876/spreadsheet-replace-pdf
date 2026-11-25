@@ -1,32 +1,32 @@
-# 批次替換 Excel／CSV 文字並另存 PDF
+# Batch Replace Text in Excel and CSV Files and Export to PDF
 
-本工具在 Windows 上從 Python 原始碼執行，使用已安裝的桌面版 Microsoft Excel 內建功能匯出 PDF。程式操作介面為英文。
+Run this tool from Python source on Windows. It uses the built-in PDF export feature in desktop Microsoft Excel, which must be installed on the computer. The tool's prompts are in English.
 
-## 如何在新電腦安裝執行環境
+## Set up a new Windows computer
 
-### 1. 確認桌面版 Excel 可以匯出 PDF
+### 1. Verify that desktop Excel can export to PDF (Optional)
 
-開啟 Microsoft Excel，建立一份空白活頁簿並輸入任意文字，再用 **檔案 → 另存新檔** 將它存成 PDF。如果電腦只有網頁版 Excel，請透過公司 IT 安裝桌面版。 [Microsoft Excel PDF 匯出文件](https://learn.microsoft.com/en-us/office/vba/api/excel.workbook.exportasfixedformat)
+Open Microsoft Excel, create a blank workbook, and enter some text. Choose **File → Save As** and save it as a PDF. If you only have Excel for the web, ask your IT team to install the desktop version. [Microsoft Excel PDF export documentation](https://learn.microsoft.com/en-us/office/vba/api/excel.workbook.exportasfixedformat)
 
-### 2. 安裝 Python 3.12（64 位元）
+### 2. Install Python 3.12 (64-bit)
 
-優先使用公司的軟體中心或 IT 提供的安裝方式。如果公司允許使用 Python 官方安裝程式，安裝畫面有 **Add python.exe to PATH** 時可勾選。 [Python Windows 下載頁面](https://www.python.org/downloads/windows/)
+Use your company's software center or the installation method provided by IT. If your company allows the official Python installer, select **Add python.exe to PATH** if the option appears. [Python downloads for Windows](https://www.python.org/downloads/windows/)
 
-安裝完成後，開啟新的 PowerShell 視窗並確認版本。
+After installation, open a new PowerShell window and check the version.
 
 ```powershell
 py -3.12 --version
 ```
 
-如果找不到 `py`，可以試 `python --version`。若顯示 `Python 3.12.x`，步驟 4 的第一行可改用 `python -m venv .venv`。
+If PowerShell cannot find `py`, try `python --version`. If it reports `Python 3.12.x`, use `python -m venv .venv` for the first command in step 4.
 
-### 3. 解壓縮原始碼
+### 3. Extract the source files
 
-在 GitHub 儲存庫頁面點 **Code → Download ZIP**。在檔案總管解壓縮後，開啟同時包含 `replace_and_export.py` 和 `requirements.txt` 的資料夾。在檔案總管上方的位址列輸入 `powershell` 並按 Enter，即可在該資料夾開啟 PowerShell。 [GitHub 儲存庫](https://github.com/Seilin876/spreadsheet-replace-pdf)
+On the GitHub repository page, choose **Code → Download ZIP**. Extract the ZIP in File Explorer, then open the folder containing both `replace_and_export.py` and `requirements.txt`. Type `powershell` in the File Explorer address bar and press Enter to open PowerShell in that folder. [GitHub repository](https://github.com/Seilin876/spreadsheet-replace-pdf)
 
-### 4. 建立虛擬環境並安裝套件
+### 4. Create a virtual environment and install the dependencies
 
-在 PowerShell 依序執行以下指令。這一步只需做一次。最後一行印出 `OK` 代表 `openpyxl` 與 `pywin32` 都可載入。
+Run these commands in order. You only need to do this once. The last command prints `OK` if Python can load both `openpyxl` and `pywin32`.
 
 ```powershell
 py -3.12 -m venv .venv
@@ -34,25 +34,25 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -c "import openpyxl, win32com.client; print('OK')"
 ```
 
-若公司網路限制套件下載，請向 IT 取得核准的 Python 套件來源。
+If your company network blocks package downloads, ask IT for an approved Python package source.
 
-## 執行程式
+## Run the tool
 
-每次使用時，在程式所在資料夾的 PowerShell 執行以下指令。
+Open PowerShell in the folder containing the program and run this command each time you use it.
 
 ```powershell
 .\.venv\Scripts\python.exe .\replace_and_export.py
 ```
 
-依序輸入以下資訊。
+Respond to the prompts in order.
 
-1. **Folder path** 輸入要處理的資料夾路徑。
-2. **Text to find** 輸入要搜尋的文字，區分大小寫。
-3. **Replacement text** 輸入替換文字，直接按 Enter 會刪除符合的文字。
+1. **Folder path** — Enter the path to the folder containing the files to process.
+2. **Text to find** — Enter the text to search for. Matching is case-sensitive.
+3. **Replacement text** — Enter the new text. Press Enter with the field empty to delete matching text.
 
-第一次使用請先拿檔案副本試跑，因為程式會將替換結果存回原檔，並在同一資料夾另存 PDF。例如 `報表.xlsx` 對應 `報表.xlsx.pdf`，同名 PDF 會覆寫。
+Test with copies of your files the first time. The tool saves changes to the original files and exports PDFs to the same folder. For example, `report.xlsx` produces `report.xlsx.pdf`. An existing PDF with the same name is overwritten.
 
-- 處理指定資料夾這一層的 `.xlsx`、`.xlsm`、`.xls` 和 `.csv`。Excel 會處理所有工作表的文字儲存格，並保留數值和公式。
-- Excel 依工作簿的列印設定匯出 PDF。舊版 `.xls` 在替換時會經過格式轉換，複雜版面或功能可能有差異。含混合字型或顏色的儲存格在文字被替換後會使用儲存格的預設格式。
-- CSV 支援 UTF-8、帶 BOM 的 UTF-16／UTF-32，以及依序嘗試 CP950、GB18030。替換後保留原編碼，欄位會重新加上引號。若新文字無法用原編碼儲存，該檔會列為失敗。
-- 即使找不到符合的文字，也會匯出 PDF。若 PDF 匯出失敗，該原檔會保留，程式會繼續處理其他檔案。
+- The tool processes `.xlsx`, `.xlsm`, `.xls`, and `.csv` files directly in the selected folder. It replaces text in cells across all Excel worksheets and preserves numbers and formulas.
+- Excel uses the workbook's print settings to export the PDF. When text changes in a legacy `.xls` file, format conversion may affect complex layouts or features. Edited cells with mixed fonts or colors use the cell's default formatting.
+- CSV files support UTF-8, UTF-16 and UTF-32 with a byte order mark, CP950, and GB18030. The tool preserves the original encoding and rewrites the field quoting. It reports a file as failed if the replacement text cannot be saved in the original encoding.
+- The tool exports a PDF even when there are no matches. If PDF export fails, it leaves the original file intact and continues with the remaining files.
