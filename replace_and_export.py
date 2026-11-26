@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.rich_text import CellRichText
+from openpyxl.drawing.image import PILImage
 from openpyxl.utils import get_column_letter
 
 
@@ -94,6 +95,11 @@ def open_converter(profile):
 
 
 def replace_excel(source, target, old, new):
+    if PILImage is None:
+        raise RuntimeError(
+            "Pillow is required to preserve supported Excel images. "
+            "Install the project dependencies with python -m pip install -r requirements.txt."
+        )
     workbook = load_workbook(source, keep_vba=source.suffix.lower() == ".xlsm",
                              rich_text=True)
     count = 0
