@@ -26,12 +26,12 @@ On the GitHub repository page, choose **Code → Download ZIP**. Extract the ZIP
 
 ### 4. Create a virtual environment and install the dependencies
 
-Run these commands in order. You only need to do this once. The last command prints `OK` if Python can load both `openpyxl` and `pywin32`.
+Run these commands in order. The last command prints `OK` if Python can load `openpyxl`, Pillow, and `pywin32`. If you already have a virtual environment, rerun the last two commands after updating the source files.
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -c "import openpyxl, win32com.client; print('OK')"
+.\.venv\Scripts\python.exe -c "import openpyxl, win32com.client; from PIL import Image; print('OK')"
 ```
 
 If your company network blocks package downloads, ask IT for an approved Python package source.
@@ -56,3 +56,10 @@ Test with copies of your files the first time. The tool saves changes to the ori
 - Excel uses the workbook's print settings to export the PDF. When text changes in a legacy `.xls` file, format conversion may affect complex layouts or features. Edited cells with mixed fonts or colors use the cell's default formatting.
 - CSV files support UTF-8, UTF-16 and UTF-32 with a byte order mark, CP950, and GB18030. The tool preserves the original encoding and rewrites the field quoting. It reports a file as failed if the replacement text cannot be saved in the original encoding.
 - The tool exports a PDF even when there are no matches. If PDF export fails, it leaves the original file intact and continues with the remaining files.
+
+## Changelog
+
+### 2026-11-26
+
+- Added Pillow to preserve supported embedded images when saving Excel workbooks after text replacement. Verified the fix with the workbook that originally lost its images when run from source on Python 3.12.
+- Excel text replacement now stops before saving if Pillow is missing and displays the dependency installation command.
